@@ -65,7 +65,7 @@ role = st.session_state.get("role", "")
 if role == "admin":
     menu_options = [
         "👥 Employees", "📝 Attendance", "📊 Dashboard", "💰 Salary Report",
-        "🏦 Advance Cash", "📤 Export", "🚪 Logout"
+        "📄 Salary Slips", "🏦 Advance Cash", "📤 Export", "🚪 Logout"
     ]
 elif role == "hr":
     menu_options = ["📝 Attendance", "🚪 Logout"]
@@ -199,6 +199,70 @@ elif menu == "💰 Salary Report":
             "ID", "Name", "Salary", "Daily", "Present", "Half Day", "Company Holiday", "Paid Absents",
             "Unpaid Absents", "Advance Deduction", "Final Salary"
         ]].round(2))
+elif menu == "📄 Salary Slips":
+    st.subheader("📄 Download Salary Slips")
+
+    if attendance.empty:
+        st.info("No attendance data available.")
+    else:
+        month_options = sorted(attendance["Date"].str[:7].unique(), reverse=True)
+        selected_month = st.selectbox("Select Month", month_options)
+
+        employee_names = sorted(employees["Name"].unique())
+        selected_emp = st.selectbox("Select Employee", employee_names)
+
+        emp_id = employees[employees["Name"] == selected_emp]["ID"].values[0]
+        salary = employees[employees["Name"] == selected_emp]["Salary"].values[0]
+
+        # Filter attendance for the employee & month
+        emp_att = attendance[(attendance["Name"] == selected_emp) & (attendance["Date"].str.startswith(selected_month))]
+        counts = emp_att["Status"].value_counts().to_dict()
+
+        # Fill missing statuses
+        for status in ["Present", "Absent", "Half Day", "Company Holiday", "Sunday"]:
+            counts[status] = counts.get(status, 0)
+
+        y, m = map(int, selected_month.split("-"))
+        total_days = calendar.monthrange(y, m)[1]
+        daily = salary / total_days
+        paid_absent = min(counts["Absent"], 2)
+        unpaid_absent = max(0, counts["Absent"] - 2)
+        earned = daily * (counts["Present"] + 0.5 * counts["Half Day"] + counts["Company Holiday"] + paid_absent)
+
+        # Advance deduction
+        adv = advances[(advances["ID"] == emp_id) & (advances["Month"] == selected_month)]
+        adv_deduction = adv["Installment"].sum() if not adv.empty else 0
+        final_salary = earned - adv_deduction
+
+        st.markdown(f"""
+        ### 🧾 Salary Slip for {selected_emp} – {selected_month}
+        - **Employee ID:** {emp_id}
+        - **Base Salary:** ₹{salary:.2f}
+        - **Total Days in Month:** {total_days}
+        - **Present:** {counts["Present"]} days  
+        - **Absent:** {counts["Absent"]} days (Paid: {paid_absent}, Unpaid: {unpaid_absent})  
+        - **Half Day:** {counts["Half Day"]}  
+        - **Company Holiday:** {counts["Company Holiday"]}  
+        - **Sunday:** {counts["Sunday"]}  
+        - **Advance Deduction:** ₹{adv_deduction:.2f}
+        - **Final Salary:** ₹{final_salary:.2f}
+        """)
+
+        # Optionally add download as text file
+        if st.button("📥 Download Salary Slip"):
+            slip_text = f"""Salary Slip - {selected_emp} ({emp_id}) - {selected_month}
+
+Base Salary: ₹{salary:.2f}
+Days in Month: {total_days}
+Present: {counts["Present"]}
+Absent: {counts["Absent"]} (Paid: {paid_absent}, Unpaid: {unpaid_absent})
+Half Day: {counts["Half Day"]}
+Company Holiday: {counts["Company Holiday"]}
+Sunday: {counts["Sunday"]}
+Advance Deduction: ₹{adv_deduction:.2f}
+Final Salary: ₹{final_salary:.2f}
+"""
+            st.download_button("⬇️ Download as TXT", slip_text, file_name=f"{selected_emp}_{selected_month}_salary_slip.txt")
 
 elif menu == "🏦 Advance Cash":
     st.subheader("🏦 Manage Advance Cash")
