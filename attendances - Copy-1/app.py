@@ -35,6 +35,7 @@ def save_employees(df): df.to_csv(EMPLOYEE_FILE, index=False)
 def save_attendance(df): df.to_csv(ATTENDANCE_FILE, index=False)
 def save_advances(df): df.to_csv(ADVANCE_FILE, index=False)
 
+#🔐Login 
 def login():
     st.title("🔐 InOffice Login")
     username = st.text_input("Username")
@@ -60,7 +61,7 @@ if not st.session_state.get("authenticated", False):
         st.session_state.pop("rerun_trigger")
         st.rerun()
     st.stop()
-
+#Admin & hr login details
 role = st.session_state.get("role", "")
 if role == "admin":
     menu_options = [
@@ -73,13 +74,14 @@ else:
     menu_options = ["🚪 Logout"]
 
 menu = st.sidebar.radio("Menu", menu_options)
-
+#logout 
 if menu == "🚪 Logout":
     for key in list(st.session_state.keys()):
         del st.session_state[key]
     st.success("🔓 Logged out successfully.")
     st.rerun()
 
+#employees
 elif menu == "👥 Employees":
     st.subheader("Manage Employees")
     with st.form("add_emp"):
@@ -102,7 +104,7 @@ elif menu == "👥 Employees":
         employees = employees[~employees["Name"].isin(remove_list)]
         save_employees(employees)
         st.success("🗑️ Selected employees removed successfully!")
-
+#Attendance
 elif menu == "📝 Attendance":
     st.subheader("📝 Mark Attendance")
     sel_date = st.date_input("Select Date", value=date.today())
@@ -148,23 +150,48 @@ elif menu == "📝 Attendance":
     else:
         st.warning("Submit disabled. Attendance is already marked. Enable 'Edit attendance' to make changes.")
 
-
+#Dashboard
 elif menu == "📊 Dashboard":
     st.subheader("📈 Attendance Summary")
-    if attendance.empty: st.info("No attendance data.")
-    else:
-        month = st.selectbox("Month", sorted(attendance["Date"].str[:7].unique(), reverse=True))
-        monthly = attendance[attendance["Date"].str.startswith(month)]
-        counts = monthly.groupby(["ID", "Status"]).size().unstack(fill_value=0)
-        for s in ["Present", "Absent", "Half Day", "Company Holiday", "Sunday"]:
-            if s not in counts.columns: counts[s] = 0
-        summary = employees.set_index("ID").join(counts).fillna(0)
-        summary["Paid Absents"] = summary["Absent"].apply(lambda x: min(x, 2))
-        summary["Unpaid Absents"] = summary["Absent"].apply(lambda x: max(0, x - 2))
-        st.dataframe(summary.reset_index()[[
-            "ID", "Name", "Present", "Absent", "Paid Absents", "Unpaid Absents", "Half Day", "Company Holiday", "Sunday"
-        ]])
 
+    if attendance.empty:
+        st.info("No attendance data available.")
+    else:
+        # Filters
+        month = st.selectbox("📅 Select Month", sorted(attendance["Date"].str[:7].unique(), reverse=True))
+
+        employee_filter = st.selectbox("👤 Filter by Employee", ["All"] + sorted(employees["Name"].unique()))
+        status_filter = st.selectbox("📌 Filter by Status", ["All", "Present", "Absent", "Half Day", "Company Holiday", "Sunday"])
+
+        # Filter data for selected month
+        monthly = attendance[attendance["Date"].str.startswith(month)]
+
+        # Apply employee filter
+        if employee_filter != "All":
+            monthly = monthly[monthly["Name"] == employee_filter]
+
+        # Apply status filter
+        if status_filter != "All":
+            monthly = monthly[monthly["Status"] == status_filter]
+
+        if monthly.empty:
+            st.warning("No matching attendance records.")
+        else:
+            counts = monthly.groupby(["ID", "Status"]).size().unstack(fill_value=0)
+            for s in ["Present", "Absent", "Half Day", "Company Holiday", "Sunday"]:
+                if s not in counts.columns:
+                    counts[s] = 0
+
+            summary = employees.set_index("ID").join(counts).fillna(0)
+            summary["Paid Absents"] = summary["Absent"].apply(lambda x: min(x, 2))
+            summary["Unpaid Absents"] = summary["Absent"].apply(lambda x: max(0, x - 2))
+
+            st.dataframe(summary.reset_index()[[
+                "ID", "Name", "Present", "Absent", "Paid Absents",
+                "Unpaid Absents", "Half Day", "Company Holiday", "Sunday"
+            ]])
+
+#Salary Report
 elif menu == "💰 Salary Report":
     st.subheader("💰 Salary Report")
     if attendance.empty: st.info("No data.")
@@ -199,6 +226,7 @@ elif menu == "💰 Salary Report":
             "ID", "Name", "Salary", "Daily", "Present", "Half Day", "Company Holiday", "Paid Absents",
             "Unpaid Absents", "Advance Deduction", "Final Salary"
         ]].round(2))
+                    #Salary Slips
 elif menu == "📄 Salary Slips":
     st.subheader("📄 Download Salary Slips")
 
@@ -211,8 +239,14 @@ elif menu == "📄 Salary Slips":
         employee_names = sorted(employees["Name"].unique())
         selected_emp = st.selectbox("Select Employee", employee_names)
 
-        emp_id = employees[employees["Name"] == selected_emp]["ID"].values[0]
-        salary = employees[employees["Name"] == selected_emp]["Salary"].values[0]
+        emp_row = employees[employees["Name"] == selected_emp]
+        if emp_row.empty:
+            st.error("❌ No employee found with the selected name.")
+            st.stop()
+        else:
+            emp_id = emp_row["ID"].values[0]
+            salary = emp_row["Salary"].values[0]
+
 
         # Filter attendance for the employee & month
         emp_att = attendance[(attendance["Name"] == selected_emp) & (attendance["Date"].str.startswith(selected_month))]
@@ -263,14 +297,21 @@ Advance Deduction: ₹{adv_deduction:.2f}
 Final Salary: ₹{final_salary:.2f}
 """
             st.download_button("⬇️ Download as TXT", slip_text, file_name=f"{selected_emp}_{selected_month}_salary_slip.txt")
-
+#Advance Cash
 elif menu == "🏦 Advance Cash":
     st.subheader("🏦 Manage Advance Cash")
     st.markdown("### ➕ Add Advance")
     col1, col2 = st.columns(2)
+
     with col1:
         selected_emp = st.selectbox("Select Employee", employees["Name"], key="adv_emp")
-        emp_id = employees[employees["Name"] == selected_emp]["ID"].values[0]
+        emp_row = employees[employees["Name"] == selected_emp]
+        if emp_row.empty:
+            st.error("❌ No employee found with the selected name.")
+            st.stop()
+        else:
+            emp_id = emp_row["ID"].values[0]
+
     with col2:
         month = st.selectbox("Month", pd.date_range(start="2023-01-01", end=date.today(), freq="MS").strftime("%Y-%m").tolist()[::-1], key="adv_month")
 
@@ -321,7 +362,7 @@ elif menu == "🏦 Advance Cash":
         advances = advances.drop(index=delete_ids).reset_index(drop=True)
         save_advances(advances)
         st.success("Selected records deleted.")
-        
+        #Export
 elif menu == "📤 Export":
     st.subheader("📤 Export Data")
     export_type = st.radio("Export Type", ["Attendance", "Salary Report"])
