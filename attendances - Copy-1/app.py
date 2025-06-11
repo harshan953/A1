@@ -152,44 +152,43 @@ elif menu == "📝 Attendance":
 
 #Dashboard
 elif menu == "📊 Dashboard":
-    st.subheader("📈 Attendance Summary")
+    st.subheader("📊 Attendance Dashboard")
 
     if attendance.empty:
-        st.info("No attendance data available.")
+        st.info("No attendance records available.")
     else:
-        # Filters
-        month = st.selectbox("📅 Select Month", sorted(attendance["Date"].str[:7].unique(), reverse=True))
+        tab1, tab2 = st.tabs(["📊 Monthly Summary", "📅 Daily View"])
 
-        employee_filter = st.selectbox("👤 Filter by Employee", ["All"] + sorted(employees["Name"].unique()))
-        status_filter = st.selectbox("📌 Filter by Status", ["All", "Present", "Absent", "Half Day", "Company Holiday", "Sunday"])
-
-        # Filter data for selected month
-        monthly = attendance[attendance["Date"].str.startswith(month)]
-
-        # Apply employee filter
-        if employee_filter != "All":
-            monthly = monthly[monthly["Name"] == employee_filter]
-
-        # Apply status filter
-        if status_filter != "All":
-            monthly = monthly[monthly["Status"] == status_filter]
-
-        if monthly.empty:
-            st.warning("No matching attendance records.")
-        else:
+        # --- Monthly Summary ---
+        with tab1:
+            month = st.selectbox("Select Month", sorted(attendance["Date"].str[:7].unique(), reverse=True))
+            monthly = attendance[attendance["Date"].str.startswith(month)]
             counts = monthly.groupby(["ID", "Status"]).size().unstack(fill_value=0)
             for s in ["Present", "Absent", "Half Day", "Company Holiday", "Sunday"]:
                 if s not in counts.columns:
                     counts[s] = 0
-
             summary = employees.set_index("ID").join(counts).fillna(0)
             summary["Paid Absents"] = summary["Absent"].apply(lambda x: min(x, 2))
             summary["Unpaid Absents"] = summary["Absent"].apply(lambda x: max(0, x - 2))
-
             st.dataframe(summary.reset_index()[[
-                "ID", "Name", "Present", "Absent", "Paid Absents",
-                "Unpaid Absents", "Half Day", "Company Holiday", "Sunday"
+                "ID", "Name", "Present", "Absent", "Paid Absents", "Unpaid Absents", "Half Day", "Company Holiday", "Sunday"
             ]])
+
+        # --- Daily View ---
+        with tab2:
+            st.markdown("### 📅 Daily Attendance Records")
+            selected_month = st.selectbox("Filter Month", sorted(attendance["Date"].str[:7].unique(), reverse=True), key="daily_month")
+
+            name_options = ["All"] + sorted(attendance["Name"].unique())
+            selected_name = st.selectbox("Filter by Employee Name", name_options, key="daily_name")
+
+            daily_att = attendance[attendance["Date"].str.startswith(selected_month)]
+
+            if selected_name != "All":
+                daily_att = daily_att[daily_att["Name"] == selected_name]
+
+            daily_summary = daily_att.sort_values(by=["Date", "Name"])
+            st.dataframe(daily_summary, use_container_width=True)
 
 #Salary Report
 elif menu == "💰 Salary Report":
