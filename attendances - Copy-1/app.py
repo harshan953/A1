@@ -321,50 +321,85 @@ elif menu == "🏦 Advance Cash":
         advances = advances.drop(index=delete_ids).reset_index(drop=True)
         save_advances(advances)
         st.success("Selected records deleted.")
+        
+#📤Export/📥Import
 
-elif menu == "📤 Export":
-    st.subheader("📤 Export Data")
-    export_type = st.radio("Export Type", ["Attendance", "Salary Report"])
-    month_options = sorted(attendance["Date"].str[:7].unique())
-    selected_month = st.selectbox("Select Month", month_options)
-    employee_options = ["All"] + sorted(employees["Name"].unique())
-    selected_employee = st.selectbox("Select Employee", employee_options)
+elif menu == "📤 Export / Import":
+    st.subheader("📤 Export / 📥 Import Data")
 
-    if export_type == "Attendance":
-        filtered = attendance[attendance["Date"].str.startswith(selected_month)]
-        if selected_employee != "All":
-            filtered = filtered[filtered["Name"] == selected_employee]
-        st.write(f"Exporting {selected_employee} attendance for {selected_month}")
-        st.download_button("📥 Download Attendance CSV", filtered.to_csv(index=False), file_name=f"{selected_employee}_{selected_month}_attendance.csv", mime="text/csv")
+    tab1, tab2 = st.tabs(["📤 Export", "📥 Import"])
 
-    elif export_type == "Salary Report":
-        monthly = attendance[attendance["Date"].str.startswith(selected_month)]
-        status_counts = monthly.groupby(["Name", "Status"]).size().unstack(fill_value=0)
-        for status in ["Present", "Absent", "Half Day", "Company Holiday", "Sunday"]:
-            if status not in status_counts.columns:
-                status_counts[status] = 0
-        merged = pd.merge(employees, status_counts, left_on="Name", right_index=True, how="left").fillna(0)
-        year, month_num = map(int, selected_month.split("-"))
-        days_in_month = calendar.monthrange(year, month_num)[1]
-        merged["Daily Salary"] = merged["Salary"] / days_in_month
-        merged["Paid Absents"] = merged["Absent"].apply(lambda x: min(x, 2))
-        merged["Unpaid Absents"] = merged["Absent"].apply(lambda x: max(0, x - 2))
-        merged["Salary Earned"] = (
-            merged["Daily Salary"] * (
-                merged["Present"] +
-                merged["Company Holiday"] +
-                merged["Paid Absents"] +
-                0.5 * merged["Half Day"]
-            )
-        ).round(2)
+    # ---------------- Export ----------------
+    with tab1:
+        export_type = st.radio("Export Type", ["Attendance", "Salary Report"])
+        month_options = sorted(attendance["Date"].str[:7].unique())
+        selected_month = st.selectbox("Select Month", month_options)
+        employee_options = ["All"] + sorted(employees["Name"].unique())
+        selected_employee = st.selectbox("Select Employee", employee_options)
 
-        salary_data = merged[[
-            "ID", "Name", "Salary", "Present", "Absent", "Paid Absents",
-            "Unpaid Absents", "Half Day", "Company Holiday", "Salary Earned"
-        ]]
+        if export_type == "Attendance":
+            filtered = attendance[attendance["Date"].str.startswith(selected_month)]
+            if selected_employee != "All":
+                filtered = filtered[filtered["Name"] == selected_employee]
+            st.download_button("📥 Download Attendance CSV", filtered.to_csv(index=False), file_name=f"{selected_employee}_{selected_month}_attendance.csv", mime="text/csv")
 
-        if selected_employee != "All":
-            salary_data = salary_data[salary_data["Name"] == selected_employee]
+        elif export_type == "Salary Report":
+            monthly = attendance[attendance["Date"].str.startswith(selected_month)]
+            status_counts = monthly.groupby(["Name", "Status"]).size().unstack(fill_value=0)
+            for status in ["Present", "Absent", "Half Day", "Company Holiday", "Sunday"]:
+                if status not in status_counts.columns:
+                    status_counts[status] = 0
+            merged = pd.merge(employees, status_counts, left_on="Name", right_index=True, how="left").fillna(0)
+            year, month_num = map(int, selected_month.split("-"))
+            days_in_month = calendar.monthrange(year, month_num)[1]
+            merged["Daily Salary"] = merged["Salary"] / days_in_month
+            merged["Paid Absents"] = merged["Absent"].apply(lambda x: min(x, 2))
+            merged["Unpaid Absents"] = merged["Absent"].apply(lambda x: max(0, x - 2))
+            merged["Salary Earned"] = (
+                merged["Daily Salary"] * (
+                    merged["Present"] +
+                    merged["Company Holiday"] +
+                    merged["Paid Absents"] +
+                    0.5 * merged["Half Day"]
+                )
+            ).round(2)
 
-        st.write(f"Exporting salary report for {selected_employee} - {selected_month}")
-        st.download_button("📥 Download Salary Report CSV", salary_data.to_csv(index=False), file_name=f"{selected_employee}_{selected_month}_salary_report.csv", mime="text/csv")
+            salary_data = merged[[
+                "ID", "Name", "Salary", "Present", "Absent", "Paid Absents",
+                "Unpaid Absents", "Half Day", "Company Holiday", "Salary Earned"
+            ]]
+
+            if selected_employee != "All":
+                salary_data = salary_data[salary_data["Name"] == selected_employee]
+
+            st.download_button("📥 Download Salary Report CSV", salary_data.to_csv(index=False), file_name=f"{selected_employee}_{selected_month}_salary_report.csv", mime="text/csv")
+
+    # ---------------- Import ----------------
+    with tab2:
+        st.markdown("### 🧾 Upload Employee or Attendance CSV")
+        import_type = st.radio("Import Type", ["Employees", "Attendance"])
+
+        uploaded_file = st.file_uploader("Choose CSV file", type="csv")
+
+        if uploaded_file:
+            df = pd.read_csv(uploaded_file)
+            st.dataframe(df)
+
+            if st.button("📤 Import Now"):
+                if import_type == "Employees":
+                    required_cols = {"ID", "Name", "Salary"}
+                    if required_cols.issubset(df.columns):
+                        df = df[list(required_cols)]
+                        df.to_csv(EMPLOYEE_FILE, index=False)
+                        st.success("✅ Employee data imported successfully!")
+                    else:
+                        st.error("❌ Missing required columns: ID, Name, Salary")
+
+                elif import_type == "Attendance":
+                    required_cols = {"Date", "ID", "Name", "Status"}
+                    if required_cols.issubset(df.columns):
+                        df = df[list(required_cols)]
+                        df.to_csv(ATTENDANCE_FILE, index=False)
+                        st.success("✅ Attendance data imported successfully!")
+                    else:
+                        st.error("❌ Missing required columns: Date, ID, Name, Status")
